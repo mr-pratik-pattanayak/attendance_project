@@ -81,7 +81,7 @@ def generate_qr():
 
     return jsonify({'qr_code': qr_base64, 'session_id': session_id})
 
-
+# mark attendance 
 @app.route('/mark_attendance', methods=['POST'])
 def mark_attendance():
     data = request.get_json()
@@ -132,6 +132,87 @@ def attendance_report():
 
     result = [{'session_id': row[0], 'status': row[1], 'timestamp': str(row[2])} for row in records]
     return jsonify(result)
+
+# get all the students 
+@app.route('/get_students', methods=['GET'])
+def get_students():
+    cur = mysql.connection.cursor()
+    cur.execute("SELECT * FROM student")
+    students = cur.fetchall()
+    cur.close()
+
+    result = [{'id': row[0], 'name': row[1], 'email': row[2]} for row in students]
+    return jsonify(result)
+
+# update student
+@app.route('/update_student', methods=['PUT'])
+def update_student():
+    data = request.get_json()
+    id = data['id']
+    name = data['name']
+    email = data['email']
+    cur = mysql.connection.cursor()
+    cur.execute("UPDATE student SET name=%s, email=%s WHERE id=%s", (name, email, id))
+    mysql.connection.commit()
+    cur.close()
+    return jsonify({'message': 'Student updated successfully!'})
+
+# delete student
+@app.route('/delete_student', methods=['DELETE'])
+def delete_student():
+    data = request.get_json()
+    id = data['id']
+    cur = mysql.connection.cursor()
+    cur.execute("DELETE FROM student WHERE id=%s", (id,))
+    mysql.connection.commit()
+    cur.close()
+    return jsonify({'message': 'Student deleted successfully!'})
+
+# delete session
+@app.route('/delete_session', methods=['DELETE'])
+def delete_session():
+    data = request.get_json()
+    id = data['id']
+    cur = mysql.connection.cursor()
+    cur.execute("DELETE FROM session WHERE id=%s", (id,))
+    mysql.connection.commit()
+    cur.close()
+    return jsonify({'message': 'Session deleted successfully!'})
+
+# get all the sessions
+@app.route('/get_sessions', methods=['GET'])
+def get_sessions():
+    cur = mysql.connection.cursor()
+    cur.execute("SELECT * FROM session")
+    sessions = cur.fetchall()
+    cur.close()
+
+    result = [{'id': row[0], 'session_name': row[5], 'session_code': row[1], 'location_lat': row[2], 'location_long': row[3], 'expiry_time': str(row[4])} for row in sessions]
+    return jsonify(result)
+
+
+# get specific session's attendance
+@app.route('/get_session_attendance', methods=['GET'])
+def get_session_attendance():
+    data = request.get_json()
+    session_id = data['session_id']
+    if not session_id:
+        return jsonify({'message': 'session_id is required'}), 400
+    cur = mysql.connection.cursor()
+    cur.execute("""
+        SELECT student_id, status, timestamp
+        FROM attendance
+        WHERE session_id = %s
+    """, (session_id,))
+    records = cur.fetchall()
+    cur.close()
+
+    if not records:
+        return jsonify({'message': 'No attendance records found for this session'}), 404
+
+    result = [{'student_id': row[1], 'status': row[3], 'timestamp': str(row[4])} for row in records]
+    return jsonify(result)
+
 
 
 # ================================
