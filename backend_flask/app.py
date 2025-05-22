@@ -2,6 +2,9 @@ from flask import Flask, request, jsonify
 from flask_mysqldb import MySQL
 from flask_cors import CORS
 from geopy.distance import geodesic
+from werkzeug.utils import secure_filename
+import pandas as pd
+import os
 import qrcode
 import io
 import base64
@@ -212,6 +215,39 @@ def get_session_attendance():
 
     result = [{'student_id': row[1], 'status': row[3], 'timestamp': str(row[4])} for row in records]
     return jsonify(result)
+
+# bulk student import from excel sheet 
+
+# allow file upload 
+UPLOAD_FOLDER = 'uploads'
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+allowed_extensions = {'xlsx', 'xls'}
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in allowed_extensions
+
+@app.route('/import_students', methods=['POST'])
+def import_students():
+    if 'file' not in request.files:
+        return jsonify({'message': 'No file part'}), 400
+    file=request.files['file']
+    if file.filename == '':
+        return jsonify({'message': 'No selected file'}), 400
+    if file and allowed_file(file.filename):
+        filename = secure_filename(file.filename)
+        filepath=os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        file.save(filepath)
+        df=pd.read_excel(filepath)
+        cur = mysql.connection.cursor()
+        for index, row in df.iterrows():
+            id = row['id']
+            name = row['name']
+            email = row['email']
+            cur.execute("INSERT INTO student (id, name, email) VALUES (%s, %s, %s)", (id, name, email))
+        mysql.connection.commit()
+        cur.close()
+        return jsonify({'message': 'Students imported successfully!'}), 201
+    return jsonify({'message': 'Invalid file format'}), 400
 
 
 
