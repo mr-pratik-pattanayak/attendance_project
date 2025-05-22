@@ -249,7 +249,36 @@ def import_students():
         return jsonify({'message': 'Students imported successfully!'}), 201
     return jsonify({'message': 'Invalid file format'}), 400
 
+# register admin
+@app.route('/register_admin', methods=['POST'])
+def register_admin():
+    data = request.get_json()
+    name = data['name']
+    email = data['email']
+    password = data['password']
+    role = data['role']
+    if role not in ['ADMIN', 'TEACHER']:
+        return jsonify({'message': 'Invalid role!'}), 400
+    cur = mysql.connection.cursor()
+    cur.execute("INSERT INTO admin (name, email, password, role) VALUES (%s, %s, %s, %s)", (name, email, password, role))
+    mysql.connection.commit()
+    cur.close()
+    return jsonify({'message': 'Admin registered successfully!'}), 201
 
+# login admin
+@app.route('/login_admin', methods=['POST'])
+def login_admin():
+    data = request.get_json()
+    email = data['email']
+    password = data['password']
+    cur = mysql.connection.cursor()
+    cur.execute("SELECT * FROM admin WHERE email=%s AND password=%s", (email, password))
+    admin = cur.fetchone()
+    cur.close()
+    if admin:
+        return jsonify({'message': 'Login successful!'}), 200
+    else:
+        return jsonify({'message': 'Invalid credentials!'}), 401
 
 # ================================
 # Run the App
