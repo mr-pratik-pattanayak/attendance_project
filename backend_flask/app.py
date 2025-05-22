@@ -260,7 +260,7 @@ def register_admin():
     if role not in ['ADMIN', 'TEACHER']:
         return jsonify({'message': 'Invalid role!'}), 400
     cur = mysql.connection.cursor()
-    cur.execute("INSERT INTO admin (name, email, password, role) VALUES (%s, %s, %s, %s)", (name, email, password, role))
+    cur.execute("INSERT INTO user (name, email, password, role) VALUES (%s, %s, %s, %s)", (name, email, password, role))
     mysql.connection.commit()
     cur.close()
     return jsonify({'message': 'Admin registered successfully!'}), 201
@@ -272,13 +272,83 @@ def login_admin():
     email = data['email']
     password = data['password']
     cur = mysql.connection.cursor()
-    cur.execute("SELECT * FROM admin WHERE email=%s AND password=%s", (email, password))
+    cur.execute("SELECT * FROM user WHERE email=%s AND password=%s", (email, password))
     admin = cur.fetchone()
     cur.close()
     if admin:
         return jsonify({'message': 'Login successful!'}), 200
     else:
         return jsonify({'message': 'Invalid credentials!'}), 401
+
+# delete teacher
+@app.route('/delete_teacher', methods=['DELETE'])
+def delete_teacher():
+    data = request.get_json()
+    id = data['id']
+    
+    cur = mysql.connection.cursor()
+    cur.execute("SELECT role FROM user WHERE id=%s ", (id,))
+    result = cur.fetchone()
+    if not result or result[0] != 'TEACHER':
+        return jsonify({'message': 'Teacher not found!'}), 404
+    cur.execute("DELETE FROM user WHERE id=%s", (id,))
+    mysql.connection.commit()
+    cur.close()
+    return jsonify({'message': 'Teacher deleted successfully!'}), 200
+
+# get all the teachers
+@app.route('/get_teachers', methods=['GET'])
+def get_teachers():
+    cur = mysql.connection.cursor()
+    cur.execute("SELECT * FROM user WHERE role='TEACHER'")
+    teachers = cur.fetchall()
+    cur.close()
+
+    result = [{'id': row[0], 'name': row[1], 'email': row[2], 'role': row[3]} for row in teachers]
+    return jsonify(result)
+
+# add teacher
+@app.route('/add_teacher', methods=['POST'])
+def add_teacher():
+    data = request.get_json()
+    name = data['name']
+    email = data['email']
+    password = data['password']
+    cur = mysql.connection.cursor()
+    cur.execute("INSERT INTO user (name, email, password, role) VALUES (%s, %s, %s, %s)", (name, email, password, 'TEACHER'))
+    mysql.connection.commit()
+    cur.close()
+    return jsonify({'message': 'Teacher added successfully!'}), 201
+
+# update teacher
+@app.route('/update_teacher', methods=['PUT'])
+def update_teacher():
+    data = request.get_json()
+    id = data['id']
+    name = data['name']
+    email = data['email']
+    cur = mysql.connection.cursor()
+    cur.execute("UPDATE user SET name=%s, email=%s WHERE id=%s", (name, email, id))
+    mysql.connection.commit()
+    cur.close()
+    return jsonify({'message': 'Teacher updated successfully!'}), 200
+
+# student login
+@app.route('/student_login', methods=['POST'])
+def student_login():
+    data = request.get_json()
+    id = data['id']
+    email = data['email'] # email is used for password
+    cur = mysql.connection.cursor()
+    cur.execute("SELECT * FROM student WHERE id=%s AND email=%s", (id, email))
+    student = cur.fetchone()
+    cur.close()
+    if student:
+        return jsonify({'message': 'Login successful!'}), 200
+    else:
+        return jsonify({'message': 'Invalid credentials!'}), 401
+    
+
 
 # ================================
 # Run the App

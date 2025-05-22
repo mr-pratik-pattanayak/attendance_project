@@ -2,8 +2,8 @@
 CREATE DATABASE IF NOT EXISTS attendance_app;
 USE attendance_app;
 
--- Admin Table
-CREATE TABLE admin (
+-- user Table
+CREATE TABLE user (
     id INT PRIMARY KEY AUTO_INCREMENT,
     name VARCHAR(50) NOT NULL,
     email VARCHAR(100) NOT NULL UNIQUE,
