@@ -285,8 +285,14 @@ def login_admin():
 def delete_teacher():
     data = request.get_json()
     id = data['id']
-    
+    request_id = data['request_id']
+
     cur = mysql.connection.cursor()
+    cur.execute("SELECT role FROM user WHERE id=%s ", (request_id,))
+    result = cur.fetchone()
+    if not result or result[0] != 'ADMIN':
+        return jsonify({'message': 'only admin can delete teacher!'}), 404
+
     cur.execute("SELECT role FROM user WHERE id=%s ", (id,))
     result = cur.fetchone()
     if not result or result[0] != 'TEACHER':
@@ -299,11 +305,15 @@ def delete_teacher():
 # get all the teachers
 @app.route('/get_teachers', methods=['GET'])
 def get_teachers():
+    request_id = request.args.get('request_id')
     cur = mysql.connection.cursor()
+    cur.execute("select role from user where id=%s", (request_id,))
+    result = cur.fetchone()
+    if not result or result[0] != 'ADMIN':
+        return jsonify({'message': 'only admin can view teachers!'}), 403
     cur.execute("SELECT * FROM user WHERE role='TEACHER'")
     teachers = cur.fetchall()
     cur.close()
-
     result = [{'id': row[0], 'name': row[1], 'email': row[2], 'role': row[3]} for row in teachers]
     return jsonify(result)
 
