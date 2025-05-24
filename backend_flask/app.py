@@ -35,10 +35,11 @@ def add_student():
     data = request.get_json()
     id= data['id']
     name = data['name']
+    class_name = data['class']
     email = data['email']
-
+    phone = data['phone']
     cur = mysql.connection.cursor()
-    cur.execute("INSERT INTO student (id, name, email) VALUES (%s, %s, %s)", (id, name, email))
+    cur.execute("INSERT INTO student (id, name, class,email, phone) VALUES (%s, %s, %s, %s, %s)", (id, name, class_name, email, phone))
     mysql.connection.commit()
     cur.close()
 
@@ -147,7 +148,7 @@ def get_students():
     students = cur.fetchall()
     cur.close()
 
-    result = [{'id': row[0], 'name': row[1], 'email': row[2]} for row in students]
+    result = [{'id': row[0], 'name': row[1], 'class': row[2],'email': row[3], 'phone': row[4]} for row in students]
     return jsonify(result)
 
 # update student
@@ -156,9 +157,11 @@ def update_student():
     data = request.get_json()
     id = data['id']
     name = data['name']
+    class_name = data['class_name']
     email = data['email']
+    phone = data['phone']
     cur = mysql.connection.cursor()
-    cur.execute("UPDATE student SET name=%s, email=%s WHERE id=%s", (name, email, id))
+    cur.execute("UPDATE student SET name=%s, email=%s, class=%s, phone=%s WHERE id=%s", (name, email, class_name, phone, id))
     mysql.connection.commit()
     cur.close()
     return jsonify({'message': 'Student updated successfully!'})
