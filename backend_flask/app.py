@@ -67,11 +67,14 @@ def add_session():
 def generate_qr():
     data = request.get_json()
     expiry_minutes = data.get('expiry_minutes', 5)
+    location_lat = data.get('location_lat', ALLOWED_LOCATION[0])
+    location_long = data.get('location_long', ALLOWED_LOCATION[1])
     session_code = f"session_{int(datetime.now().timestamp())}"
     expiry_time = datetime.now() + timedelta(minutes=expiry_minutes)
 
     cur = mysql.connection.cursor()
-    cur.execute("INSERT INTO session (session_code, expiry_time) VALUES (%s, %s)", (session_code, expiry_time))
+    cur.execute("INSERT INTO session (session_code, expiry_time, location_lat, location_long) VALUES (%s, %s, %s, %s)",
+                (session_code, expiry_time, location_lat, location_long))
     mysql.connection.commit()
     session_id = cur.lastrowid
     cur.close()
@@ -82,9 +85,9 @@ def generate_qr():
     qr_img.save(buffered, format="PNG")
     qr_base64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
 
-    return jsonify({'qr_code': qr_base64, 'session_id': session_id})
+    return jsonify({'qr_code': qr_base64, 'session_id': session_id, 'session_code': session_code})
 
-# mark attendance 
+# mark attendance
 @app.route('/mark_attendance', methods=['POST'])
 def mark_attendance():
     data = request.get_json()
