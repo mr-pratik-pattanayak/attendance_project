@@ -231,7 +231,7 @@ app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 allowed_extensions = {'xlsx', 'xls'}
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in allowed_extensions
-
+# import students from excel sheet
 @app.route('/import_students', methods=['POST'])
 def import_students():
     if 'file' not in request.files:
