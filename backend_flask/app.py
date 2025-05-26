@@ -261,12 +261,13 @@ def register_admin():
     data = request.get_json()
     name = data['name']
     email = data['email']
+    phone = data['phone']
     password = data['password']
     role = data['role']
     if role not in ['ADMIN', 'TEACHER']:
         return jsonify({'message': 'Invalid role!'}), 400
     cur = mysql.connection.cursor()
-    cur.execute("INSERT INTO user (name, email, password, role) VALUES (%s, %s, %s, %s)", (name, email, password, role))
+    cur.execute("INSERT INTO user (name, email, phone, password, role) VALUES (%s, %s, %s, %s, %s)", (name, email, phone, password, role))
     mysql.connection.commit()
     cur.close()
     return jsonify({'message': 'Admin registered successfully!'}), 201
@@ -320,7 +321,7 @@ def get_teachers():
     cur.execute("SELECT * FROM user WHERE role='TEACHER'")
     teachers = cur.fetchall()
     cur.close()
-    result = [{'id': row[0], 'name': row[1], 'email': row[2], 'role': row[3]} for row in teachers]
+    result = [{'id': row[0], 'name': row[1], 'email': row[2], 'phone' : row[3], 'role': row[5]} for row in teachers]
     return jsonify(result)
 
 # add teacher
@@ -329,9 +330,10 @@ def add_teacher():
     data = request.get_json()
     name = data['name']
     email = data['email']
+    phone = data['phone']
     password = data['password']
     cur = mysql.connection.cursor()
-    cur.execute("INSERT INTO user (name, email, password, role) VALUES (%s, %s, %s, %s)", (name, email, password, 'TEACHER'))
+    cur.execute("INSERT INTO user (name, email, phone, password, role) VALUES (%s, %s, %s, %s,%s)", (name, email, phone, password, 'TEACHER'))
     mysql.connection.commit()
     cur.close()
     return jsonify({'message': 'Teacher added successfully!'}), 201
@@ -343,8 +345,9 @@ def update_teacher():
     id = data['id']
     name = data['name']
     email = data['email']
+    phone = data['phone']
     cur = mysql.connection.cursor()
-    cur.execute("UPDATE user SET name=%s, email=%s WHERE id=%s", (name, email, id))
+    cur.execute("UPDATE user SET name=%s, email=%s, phone=%s WHERE id=%s", (name, email, phone, id))
     mysql.connection.commit()
     cur.close()
     return jsonify({'message': 'Teacher updated successfully!'}), 200

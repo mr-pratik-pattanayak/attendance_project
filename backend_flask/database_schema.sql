@@ -3,10 +3,12 @@ CREATE DATABASE IF NOT EXISTS attendance_app;
 USE attendance_app;
 
 -- user Table
+-- add phone no column 
 CREATE TABLE user (
     id INT PRIMARY KEY AUTO_INCREMENT,
     name VARCHAR(50) NOT NULL,
     email VARCHAR(100) NOT NULL UNIQUE,
+    phone VARCHAR(15) not null ,
     password VARCHAR(255) NOT NULL,
     role ENUM('admin', 'teacher') NOT NULL
 );
