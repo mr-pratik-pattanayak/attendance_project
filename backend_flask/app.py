@@ -9,6 +9,7 @@ import qrcode
 import io
 import base64
 from datetime import datetime, timedelta
+import MySQLdb # For specific error handling
 
 app = Flask(__name__)
 CORS(app)
@@ -33,15 +34,56 @@ ALLOWED_RADIUS = 0.1  # in km
 @app.route('/add_student', methods=['POST'])
 def add_student():
     data = request.get_json()
-    id= data['id']
-    name = data['name']
-    class_name = data['class']
-    email = data['email']
-    phone = data['phone']
-    cur = mysql.connection.cursor()
-    cur.execute("INSERT INTO student (id, name, class,email, phone) VALUES (%s, %s, %s, %s, %s)", (id, name, class_name, email, phone))
-    mysql.connection.commit()
-    cur.close()
+
+    if not data:
+        return jsonify({"message": "Request payload is missing or not valid JSON."}), 400
+
+    student_id = data.get('id')
+    name = data.get('name')
+    class_name = data.get('class')  # Assuming JSON key is 'class'
+    email = data.get('email')
+    phone = data.get('phone')
+    requesting_user_id = data.get('request_id')
+
+    required_fields = {
+        "id": student_id,
+        "name": name,
+        "class": class_name,
+        "email": email,
+        "phone": phone,
+        "request_id": requesting_user_id
+    }
+
+    missing_fields = [key for key, value in required_fields.items() if value is None]
+    if missing_fields:
+        return jsonify({"message": f"Missing required fields: {', '.join(missing_fields)}"}), 400
+
+    cur = None
+    try:
+        cur = mysql.connection.cursor()
+
+        # Authorization check
+        cur.execute("SELECT role FROM user WHERE id = %s", (requesting_user_id,))
+        user_role_result = cur.fetchone()
+
+        if not user_role_result or user_role_result[0] not in ('ADMIN', 'TEACHER'):
+            return jsonify({'message': 'User not authorized to add students.'}), 403
+
+        # Check if student ID already exists
+        cur.execute("SELECT id FROM student WHERE id = %s", (student_id,))
+        if cur.fetchone():
+            return jsonify({'message': f"Student with ID {student_id} already exists."}), 409
+
+        cur.execute("INSERT INTO student (id, name, class, email, phone) VALUES (%s, %s, %s, %s, %s)",
+                    (student_id, name, class_name, email, phone))
+        mysql.connection.commit()
+    except MySQLdb.Error as e:
+        app.logger.error(f"Database error in add_student: {e}")
+        mysql.connection.rollback()
+        return jsonify({'message': 'Failed to add student due to a database error.'}), 500
+    finally:
+        if cur:
+            cur.close()
 
     return jsonify({'message': 'Student added successfully!'}), 201
 
