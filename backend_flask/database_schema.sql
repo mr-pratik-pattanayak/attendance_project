@@ -25,10 +25,11 @@ CREATE TABLE student (
 -- Session Table
 CREATE TABLE session (
     id INT PRIMARY KEY AUTO_INCREMENT,
+    session_name VARCHAR(100) NOT NULL,
     session_code VARCHAR(50) NOT NULL UNIQUE,
-    location_lat DECIMAL(9,6) NOT NULL,
-    location_long DECIMAL(9,6) NOT NULL,
-    expiry_time DATETIME NOT NULL
+    expiry_time DATETIME NOT NULL,
+    created_by int not null,
+    ADD CONSTRAINT fk_created_by FOREIGN KEY (created_by) REFERENCES user(id) ON DELETE CASCADE ON UPDATE CASCADE
 );
 
 -- Attendance Table

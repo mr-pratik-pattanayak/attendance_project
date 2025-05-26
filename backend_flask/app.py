@@ -9,6 +9,7 @@ import qrcode
 import io
 import base64
 from datetime import datetime, timedelta
+import uuid # For generating unique session codes
 import MySQLdb # For specific error handling
 
 app = Flask(__name__)
@@ -90,19 +91,66 @@ def add_student():
 # add session
 @app.route('/add_session', methods=['POST'])
 def add_session():
-    data = request.json
-    id = data.get('id')
-    session_name = data.get('session_name')
-    session_code = data.get('session_code')
-    location_lat = data.get('location_lat')
-    location_long = data.get('location_long')
-    expiry_time = data.get('expiry_time')  
-    cur = mysql.connection.cursor()
-    cur.execute("INSERT INTO session (id, session_name, session_code, location_lat, location_long, expiry_time) VALUES (%s, %s, %s, %s, %s, %s)",
-                (id, session_name, session_code, location_lat, location_long, expiry_time))
-    mysql.connection.commit()
+    data = request.get_json()
 
-    return jsonify({"message": "Session added successfully!"})
+    if not data:
+        return jsonify({"message": "Request payload is missing or not valid JSON."}), 400
+
+    session_name = data.get('session_name')
+    expiry_time_str = data.get('expiry_time')
+    created_by = data.get('created_by')
+
+    required_fields = {
+        "session_name": session_name,
+        "expiry_time": expiry_time_str,
+        "created_by": created_by
+    }
+
+    missing_fields = [key for key, value in required_fields.items() if value is None]
+    if missing_fields:
+        return jsonify({"message": f"Missing required fields: {', '.join(missing_fields)}"}), 400
+
+    # Validate expiry_time format
+    try:
+        datetime.strptime(expiry_time_str, '%Y-%m-%d %H:%M:%S')
+    except ValueError:
+        return jsonify({"message": "Invalid expiry_time format. Expected YYYY-MM-DD HH:MM:SS"}), 400
+
+    cur = None
+    try:
+        cur = mysql.connection.cursor()
+
+        # Authorization: Check if the creator is an ADMIN or TEACHER
+        cur.execute("SELECT role FROM user WHERE id = %s", (created_by,))
+        user_role_result = cur.fetchone()
+        if not user_role_result or user_role_result[0] not in ('ADMIN', 'TEACHER'):
+            return jsonify({'message': 'User not authorized to create sessions.'}), 403
+
+        # Auto-generate a unique session code based on timestamp
+        session_code = f"SESSION_{int(datetime.now().timestamp())}"
+
+        # Insert into database (id will auto-increment)
+        cur.execute("""
+            INSERT INTO session (session_name, session_code, expiry_time, created_by)
+            VALUES (%s, %s, %s, %s)
+        """, (session_name, session_code, expiry_time_str, created_by))
+
+        mysql.connection.commit()
+        session_id_server = cur.lastrowid  # Get the auto-generated id
+
+    except MySQLdb.Error as e:
+        app.logger.error(f"Database error in add_session: {e}")
+        mysql.connection.rollback()
+        return jsonify({'message': 'Failed to add session due to a database error.'}), 500
+    finally:
+        if cur:
+            cur.close()
+
+    return jsonify({
+        "message": "Session added successfully!",
+        "session_id": session_id_server,
+        "session_code": session_code
+    }), 201
 
 
 # Generate QR Code
