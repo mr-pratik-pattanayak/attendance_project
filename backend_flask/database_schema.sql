@@ -29,6 +29,7 @@ CREATE TABLE session (
     session_code VARCHAR(50) NOT NULL UNIQUE,
     expiry_time DATETIME NOT NULL,
     created_by int not null,
+    class VARCHAR(50) NOT NULL,
     ADD CONSTRAINT fk_created_by FOREIGN KEY (created_by) REFERENCES user(id) ON DELETE CASCADE ON UPDATE CASCADE
 );
 

@@ -99,11 +99,13 @@ def add_session():
     session_name = data.get('session_name')
     expiry_time_str = data.get('expiry_time')
     created_by = data.get('created_by')
+    class_name = data.get('class')
 
     required_fields = {
         "session_name": session_name,
         "expiry_time": expiry_time_str,
-        "created_by": created_by
+        "created_by": created_by,
+        "class": class_name
     }
 
     missing_fields = [key for key, value in required_fields.items() if value is None]
@@ -131,9 +133,9 @@ def add_session():
 
         # Insert into database (id will auto-increment)
         cur.execute("""
-            INSERT INTO session (session_name, session_code, expiry_time, created_by)
-            VALUES (%s, %s, %s, %s)
-        """, (session_name, session_code, expiry_time_str, created_by))
+            INSERT INTO session (session_name, session_code, expiry_time, created_by, class)
+            VALUES (%s, %s, %s, %s, %s)
+        """, (session_name, session_code, expiry_time_str, created_by, class_name))
 
         mysql.connection.commit()
         session_id_server = cur.lastrowid  # Get the auto-generated id
@@ -227,34 +229,115 @@ def generate_qr():
 @app.route('/mark_attendance', methods=['POST'])
 def mark_attendance():
     data = request.get_json()
-    student_id = data['student_id']
-    session_id = data['session_id']
-    lat = data['latitude']
-    lng = data['longitude']
+    if not data:
+        return jsonify({'message': 'Request payload is missing or not valid JSON.'}), 400
+    student_id = data.get('student_id')
+    session_id = data.get('session_id')
+    lat = data.get('latitude')
+    lng = data.get('longitude')
+    # Validate required fields
+    if not all([student_id, session_id, lat, lng]):
+        return jsonify({'message': 'Missing required fields in request.'}), 400
+    try:
+        student_id = int(student_id)
+        session_id = int(session_id)
+        lat = float(lat)
+        lng = float(lng)
+    except (ValueError, TypeError):
+        return jsonify({'message': 'Invalid data type for student_id, session_id, latitude, or longitude.'}), 400
+    cur = None
+    current_time = datetime.now()
+    try:
+        cur = mysql.connection.cursor()
+        # Check session existence and expiry
+        cur.execute("SELECT expiry_time FROM session WHERE id = %s", (session_id,))
+        result = cur.fetchone()
+        if not result:
+            return jsonify({'message': 'Invalid session ID.'}), 400
+        expiry_time = result[0]
+        if current_time > expiry_time:
+            status = 'absent'
+        else:
+            # Compare student's location to default allowed location
+            user_location = (lat, lng)
+            distance_km = geodesic(ALLOWED_LOCATION, user_location).km
+            status = 'present' if distance_km <= ALLOWED_RADIUS else 'absent'
+        # Check if attendance already marked for this student and session
+        cur.execute("SELECT id FROM attendance WHERE student_id = %s AND session_id = %s", (student_id, session_id))
+        if cur.fetchone():
+            # Optionally, you could update the existing record or simply inform the user.
+            # For now, let's prevent duplicate entries and inform.
+            return jsonify({'message': 'Attendance already marked for this session.', 'status': 'already_marked'}), 409
+        # Record attendance
+        cur.execute("""
+            INSERT INTO attendance (student_id, session_id, status, timestamp)
+            VALUES (%s, %s, %s, %s)
+        """, (student_id, session_id, status, current_time))
+        mysql.connection.commit()
+    except MySQLdb.Error as e:
+        app.logger.error(f"Database error in mark_attendance: {e}")
+        mysql.connection.rollback()
+        return jsonify({'message': 'Database error occurred while marking attendance.'}), 500
+    finally:
+        if cur:
+            cur.close()
+    return jsonify({'message': f'Attendance marked as {status}.', 'status': status}), 200
 
-    cur = mysql.connection.cursor()
-    cur.execute("SELECT expiry_time, location_lat, location_long FROM session WHERE id = %s", (session_id,))
-    result = cur.fetchone()
-    if not result:
-        return jsonify({'message': 'Invalid session'}), 400
+# finalize attendance
+@app.route('/finalize_attendance', methods=['POST'])
+def finalize_attendance():
+    data = request.get_json()
+    if not data:
+        return jsonify({'message': 'Request payload is missing or not valid JSON.'}), 400
+    session_id = data.get('session_id')
+    if not session_id:
+        return jsonify({'message': 'session_id is required.'}), 400
+    try:
+        session_id = int(session_id)
+    except (ValueError, TypeError):
+        return jsonify({'message': 'Invalid session_id.'}), 400
+    cur = None
+    current_time = datetime.now()
+    try:
+        cur = mysql.connection.cursor()
+        # Check if session exists
+        cur.execute("SELECT class FROM session WHERE id = %s", (session_id,))
+        session_result = cur.fetchone()
+        if not session_result:
+            return jsonify({'message': 'Invalid session ID.'}), 400
+        class_name = session_result[0]
+        # Find students of this class who haven't marked attendance yet
+        cur.execute("""
+            SELECT s.id 
+            FROM student s
+            WHERE s.class = %s
+            AND s.id NOT IN (
+                SELECT student_id FROM attendance WHERE session_id = %s
+            )
+        """, (class_name, session_id))
+        absent_students = cur.fetchall()
+        if absent_students:
+            # Insert 'absent' records for them
+            cur.executemany("""
+                INSERT INTO attendance (student_id, session_id, status, timestamp)
+                VALUES (%s, %s, %s, %s)
+            """, [(student_id[0], session_id, 'absent', current_time) for student_id in absent_students])
+            mysql.connection.commit()
+            num_absent = len(absent_students)
+        else:
+            num_absent = 0
+    except MySQLdb.Error as e:
+        app.logger.error(f"Database error in finalize_session: {e}")
+        mysql.connection.rollback()
+        return jsonify({'message': 'Database error occurred while finalizing session.'}), 500
+    finally:
+        if cur:
+            cur.close()
+    return jsonify({
+        'message': f'Session finalized successfully. {num_absent} students marked as absent.',
+        'absent_count': num_absent
+    }), 200
 
-    expiry_time, session_lat, session_lng = result
-    if datetime.now() > expiry_time:
-        status = 'absent'
-    else:
-        user_location = (lat, lng)
-        session_location = (float(session_lat), float(session_lng))
-        distance_km = geodesic(session_location, user_location).km
-        status = 'present' if distance_km <= ALLOWED_RADIUS else 'absent'
-
-    cur.execute("""
-        INSERT INTO attendance (student_id, session_id, status, timestamp)
-        VALUES (%s, %s, %s, %s)
-    """, (student_id, session_id, status, datetime.now()))
-    mysql.connection.commit()
-    cur.close()
-
-    return jsonify({'status': status})
 
 
 # Attendance Report
