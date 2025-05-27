@@ -157,26 +157,71 @@ def add_session():
 @app.route('/generate_qr', methods=['POST'])
 def generate_qr():
     data = request.get_json()
-    expiry_minutes = data.get('expiry_minutes', 5)
-    location_lat = data.get('location_lat', ALLOWED_LOCATION[0])
-    location_long = data.get('location_long', ALLOWED_LOCATION[1])
-    session_code = f"session_{int(datetime.now().timestamp())}"
-    expiry_time = datetime.now() + timedelta(minutes=expiry_minutes)
-
-    cur = mysql.connection.cursor()
-    cur.execute("INSERT INTO session (session_code, expiry_time, location_lat, location_long) VALUES (%s, %s, %s, %s)",
-                (session_code, expiry_time, location_lat, location_long))
-    mysql.connection.commit()
-    session_id = cur.lastrowid
-    cur.close()
-
-    qr_data = {'session_id': session_id, 'expiry_time': str(expiry_time)}
-    qr_img = qrcode.make(str(qr_data))
-    buffered = io.BytesIO()
-    qr_img.save(buffered, format="PNG")
-    qr_base64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
-
-    return jsonify({'qr_code': qr_base64, 'session_id': session_id, 'session_code': session_code})
+    if not data:
+        return jsonify({'message': 'Request payload is missing or not valid JSON.'}), 400
+    session_id = data.get('session_id')
+    requesting_user_id = data.get('requesting_user_id')
+    # Validate presence and type
+    if not all([session_id, requesting_user_id]):
+        return jsonify({'message': 'Missing session_id or requesting_user_id in request.'}), 400
+    try:
+        session_id = int(session_id)
+        requesting_user_id = int(requesting_user_id)
+    except (ValueError, TypeError):
+        return jsonify({'message': 'session_id and requesting_user_id must be integers.'}), 400
+    try:
+        cur = mysql.connection.cursor()
+        # Fetch session details
+        cur.execute("""
+            SELECT session_code, expiry_time, created_by 
+            FROM session 
+            WHERE id = %s
+        """, (session_id,))
+        session = cur.fetchone()
+        # Check if session exists
+        if not session:
+            return jsonify({'message': 'Session not found.'}), 404
+        # Unpack session details
+        session_code, expiry_time, created_by = session
+        # Fetch requesting user's role
+        cur.execute("SELECT role FROM user WHERE id = %s", (requesting_user_id,))
+        user = cur.fetchone()
+        if not user:
+            return jsonify({'message': 'Requesting user not found.'}), 404
+        user_role = user[0]
+        # Check expiration
+        if datetime.now() > expiry_time:
+            app.logger.info(f"Generating QR for expired session ID: {session_id}")
+        # Authorization check
+        if requesting_user_id != created_by and user_role != 'ADMIN':
+            return jsonify({'message': 'Not authorized to generate QR for this session.'}), 403
+        # Prepare QR data
+        formatted_expiry_time = expiry_time.strftime('%Y-%m-%d %H:%M:%S')
+        qr_data = {
+            'session_id': session_id,
+            'session_code': session_code,
+            'expiry_time': formatted_expiry_time
+        }
+        # Generate QR
+        qr_img = qrcode.make(str(qr_data))
+        buffered = io.BytesIO()
+        qr_img.save(buffered, format="PNG")
+        qr_base64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
+    except MySQLdb.Error as e:
+        app.logger.error(f"Database error in generate_qr: {e}")
+        return jsonify({'message': 'Failed to generate QR due to a database error.'}), 500
+    except Exception as e:
+        app.logger.error(f"Unexpected error in generate_qr: {e}")
+        return jsonify({'message': 'An unexpected error occurred while generating QR code.'}), 500
+    finally:
+        if cur:
+            cur.close()
+    return jsonify({
+        'qr_code': qr_base64,
+        'session_id': session_id,
+        'session_code': session_code,
+        'expiry_time': formatted_expiry_time
+    }), 200
 
 # mark attendance
 @app.route('/mark_attendance', methods=['POST'])
