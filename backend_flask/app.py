@@ -393,15 +393,46 @@ def attendance_report():
 
 
 # get all the students 
-@app.route('/get_students', methods=['GET'])
-def get_students():
-    cur = mysql.connection.cursor()
-    cur.execute("SELECT * FROM student")
-    students = cur.fetchall()
-    cur.close()
+@app.route('/get_all_student', methods=['GET'])
+def get_all_student():
+    request_id = request.args.get('request_id')
+    if not request_id:
+        return jsonify({'message': 'request_id parameter is required.'}), 400
+    try:
+        request_id = int(request_id)
+    except ValueError:
+        return jsonify({'message': 'request_id must be an integer.'}), 400
+    cur = None
+    try:
+        cur = mysql.connection.cursor()     
+        # Check if the requesting user is an ADMIN or TEACHER
+        cur.execute("SELECT role FROM user WHERE id = %s", (request_id,))
+        user_role_result = cur.fetchone()
+        if not user_role_result or user_role_result[0] not in ('ADMIN', 'TEACHER'):
+            return jsonify({'message': 'User not authorized to view students.'}), 403 
+        # Fetch all students
+        cur.execute("SELECT id, name, class, email, phone FROM student")
+        students = cur.fetchall()
+        if not students:
+            return jsonify({'message': 'No students found.'}), 404
+        response_data = []
+        for row in students:
+            response_data.append({
+                'id': row[0],
+                'name': row[1],
+                'class': row[2],
+                'email': row[3],
+                'phone': row[4]
+            })
+        return jsonify({'student_count': len(response_data), 'students': response_data}), 200
+    except MySQLdb.Error as e:
+        app.logger.error(f"Database error in get_students: {e}")
+        return jsonify({'message': 'Failed to retrieve students due to a database error.'}), 500
+    finally:
+        if cur:
+            cur.close()
 
-    result = [{'id': row[0], 'name': row[1], 'class': row[2],'email': row[3], 'phone': row[4]} for row in students]
-    return jsonify(result)
+
 
 # update student
 @app.route('/update_student', methods=['PUT'])
