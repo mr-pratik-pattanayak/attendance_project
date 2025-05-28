@@ -256,12 +256,12 @@ def mark_attendance():
             return jsonify({'message': 'Invalid session ID.'}), 400
         expiry_time = result[0]
         if current_time > expiry_time:
-            status = 'absent'
+            status = 'ABSENT'
         else:
             # Compare student's location to default allowed location
             user_location = (lat, lng)
             distance_km = geodesic(ALLOWED_LOCATION, user_location).km
-            status = 'present' if distance_km <= ALLOWED_RADIUS else 'absent'
+            status = 'PRESENT' if distance_km <= ALLOWED_RADIUS else 'ABSENT'
         # Check if attendance already marked for this student and session
         cur.execute("SELECT id FROM attendance WHERE student_id = %s AND session_id = %s", (student_id, session_id))
         if cur.fetchone():
@@ -321,7 +321,7 @@ def finalize_attendance():
             cur.executemany("""
                 INSERT INTO attendance (student_id, session_id, status, timestamp)
                 VALUES (%s, %s, %s, %s)
-            """, [(student_id[0], session_id, 'absent', current_time) for student_id in absent_students])
+            """, [(student_id[0], session_id, 'ABSENT', current_time) for student_id in absent_students])
             mysql.connection.commit()
             num_absent = len(absent_students)
         else:
@@ -339,24 +339,58 @@ def finalize_attendance():
     }), 200
 
 
-
-# Attendance Report
+# Attendance Report for perticular student
 @app.route('/attendance_report', methods=['GET'])
 def attendance_report():
     student_id = request.args.get('student_id')
+    if not student_id:
+        return jsonify({'message': 'student_id parameter is required.'}), 400
+    try:
+        student_id = int(student_id)
+    except ValueError:
+        return jsonify({'message': 'student_id must be an integer.'}), 400
+    cur = None
+    try:
+        cur = mysql.connection.cursor()
+        cur.execute("""
+            SELECT a.session_id, a.status, a.timestamp
+            FROM attendance a
+            JOIN session s ON a.session_id = s.id
+            WHERE a.student_id = %s
+            ORDER BY a.timestamp DESC
+        """, (student_id,))
+        records = cur.fetchall()
+        present_count = 0
+        absent_count = 0
+        detailed_records = []
+        if records:
+            for row in records:
+                status = row[1]  # a.status
+                if status == 'PRESENT':
+                    present_count += 1
+                elif status == 'ABSENT':
+                    absent_count += 1
+                # Add other status counts here if needed
+                detailed_records.append({
+                    'session_id': row[0],
+                    'status': status,
+                    'timestamp': str(row[2])
+                })
+        response_data = {'present_count': present_count, 'absent_count': absent_count, 'records': detailed_records,}
+        total_session = present_count + absent_count
+        if total_session > 0:
+            response_data['attendance_percentage'] = (present_count / total_session) * 100
+        else:
+            response_data['attendance_percentage'] = 0.0
+        response_data['total_session'] = total_session
+        return jsonify(response_data), 200
+    except MySQLdb.Error as e:
+        app.logger.error(f"Database error in attendance_report: {e}")
+        return jsonify({'message': 'Failed to retrieve attendance report due to a database error.'}), 500
+    finally:
+        if cur:
+            cur.close()
 
-    cur = mysql.connection.cursor()
-    cur.execute("""
-        SELECT session_id, status, timestamp
-        FROM attendance
-        WHERE student_id = %s
-        ORDER BY timestamp DESC
-    """, (student_id,))
-    records = cur.fetchall()
-    cur.close()
-
-    result = [{'session_id': row[0], 'status': row[1], 'timestamp': str(row[2])} for row in records]
-    return jsonify(result)
 
 # get all the students 
 @app.route('/get_students', methods=['GET'])
