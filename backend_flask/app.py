@@ -513,6 +513,43 @@ def update_student():
         if cur:
             cur.close()
 
+# delete attendance for delete student (by student id )
+@app.route('/delete_attendance_by_student_id', methods=['DELETE'])
+def delete_attendance_by_student_id():
+    data = request.get_json()
+    student_id = data.get('student_id')
+    request_id = data.get('request_id')
+    if not student_id or not request_id:
+        return jsonify({'message': 'student_id and request_id are required.'}), 400
+    cur = None
+    try:
+        cur = mysql.connection.cursor()
+        # Check if the requesting user is an ADMIN or TEACHER
+        cur.execute("SELECT role FROM user WHERE id = %s", (request_id,))
+        user_role_result = cur.fetchone()
+        if user_role_result is None or user_role_result[0] not in ('ADMIN', 'TEACHER'):
+            return jsonify({'message': 'User not authorized to delete attendance records.'}), 403
+        # Check if the student exists
+        cur.execute("SELECT id FROM student WHERE id = %s", (student_id,))
+        student = cur.fetchone()
+        if not student:
+            return jsonify({'message': 'Student not found.'}), 404
+        # Check if attendance records exist
+        cur.execute("SELECT id FROM attendance WHERE student_id = %s", (student_id,))
+        attendance_records = cur.fetchall()
+        if not attendance_records:
+            return jsonify({'message': 'No attendance records found for this student.'}), 404
+        # Delete attendance records
+        cur.execute("DELETE FROM attendance WHERE student_id = %s", (student_id,))
+        mysql.connection.commit()
+        return jsonify({'message': 'Attendance records deleted successfully!'}), 200
+    except MySQLdb.Error as e:
+        app.logger.error(f"Database error in delete_attendance_by_student_id: {e}")
+        mysql.connection.rollback()
+        return jsonify({'message': 'Failed to delete attendance records due to a database error.'}), 500
+    finally:
+        if cur:
+            cur.close()
 
 # delete student
 @app.route('/delete_student', methods=['DELETE'])
