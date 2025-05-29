@@ -478,16 +478,41 @@ def get_student_by_class():
 @app.route('/update_student', methods=['PUT'])
 def update_student():
     data = request.get_json()
-    id = data['id']
-    name = data['name']
-    class_name = data['class_name']
-    email = data['email']
-    phone = data['phone']
-    cur = mysql.connection.cursor()
-    cur.execute("UPDATE student SET name=%s, email=%s, class=%s, phone=%s WHERE id=%s", (name, email, class_name, phone, id))
-    mysql.connection.commit()
-    cur.close()
-    return jsonify({'message': 'Student updated successfully!'})
+    request_id = data.get('request_id')
+    student_id = data['student_id']
+    if not request_id or not student_id:
+        return jsonify({'message': 'request_id and student_id are required.'}), 400
+    cur=None
+    try:
+        cur=mysql.connection.cursor()
+        # Check if the requesting user is an ADMIN or TEACHER
+        cur.execute("SELECT role FROM user WHERE id = %s", (request_id,))
+        user_role_result = cur.fetchone()
+        if not user_role_result or user_role_result[0] not in ('ADMIN', 'TEACHER'):
+            return jsonify({'message': 'User not authorized to update students.'}), 403
+        # Fetch the student details
+        cur.execute("SELECT name, email, class, phone FROM student WHERE id = %s", (student_id,))
+        student = cur.fetchone()
+        if not student:
+            return jsonify({'message': 'Student not found.'}), 404
+        # Update the student details
+        name = data.get('name', student[0])
+        email = data.get('email', student[1])
+        class_name = data.get('class', student[2])
+        phone = data.get('phone', student[3])
+        if not name or not email or not class_name or not phone:
+            return jsonify({'message': 'name, email, class, and phone are required.'}), 400
+        cur.execute("UPDATE student SET name=%s, email=%s, class=%s, phone=%s WHERE id=%s", (name, email, class_name, phone, student_id))
+        mysql.connection.commit()
+        return jsonify({'message': 'Student updated successfully!'}), 200
+    except MySQLdb.Error as e:
+        app.logger.error(f"Database error in update_student: {e}")
+        mysql.connection.rollback()
+        return jsonify({'message': 'Failed to update student due to a database error.'}), 500
+    finally:
+        if cur:
+            cur.close()
+
 
 # delete student
 @app.route('/delete_student', methods=['DELETE'])
