@@ -518,12 +518,40 @@ def update_student():
 @app.route('/delete_student', methods=['DELETE'])
 def delete_student():
     data = request.get_json()
-    id = data['id']
-    cur = mysql.connection.cursor()
-    cur.execute("DELETE FROM student WHERE id=%s", (id,))
-    mysql.connection.commit()
-    cur.close()
-    return jsonify({'message': 'Student deleted successfully!'})
+    student_id = data['student_id']
+    request_id = data['request_id']
+    if not student_id or not request_id:
+        return jsonify({'message': 'student_id and request_id are required.'}), 400
+    cur = None
+    try:
+        cur=mysql.connection.cursor()
+        # Check if the requesting user is an ADMIN or TEACHER
+        cur.execute("SELECT role FROM user WHERE id = %s", (request_id,))
+        user_role_result = cur.fetchone()
+        if not user_role_result or user_role_result[0] not in ('ADMIN', 'TEACHER'):
+            return jsonify({'message': 'User not authorized to delete students.'}), 403
+        # Check if the student exists
+        cur.execute("SELECT id FROM student WHERE id = %s", (student_id,))
+        student = cur.fetchone()
+        if not student:
+            return jsonify({'message': 'Student not found.'}), 404
+        id = student[0]
+        # Check if the student has any attendance records
+        cur.execute("SELECT id FROM attendance WHERE student_id = %s", (id,))
+        attendance = cur.fetchone()
+        if attendance:
+            return jsonify({'message': 'Cannot delete student with existing attendance records.'}), 400
+        # Delete the student
+        cur.execute("DELETE FROM student WHERE id = %s", (id,))
+        mysql.connection.commit()
+        return jsonify({'message': 'Student deleted successfully!'}), 200
+    except MySQLdb.Error as e:
+        app.logger.error(f"Database error in delete_student: {e}")
+        mysql.connection.rollback()
+        return jsonify({'message': 'Failed to delete student due to a database error.'}), 500
+    finally:
+        if cur:
+            cur.close()  
 
 # delete session
 @app.route('/delete_session', methods=['DELETE'])
