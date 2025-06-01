@@ -590,6 +590,44 @@ def delete_student():
         if cur:
             cur.close()  
 
+# delete attendance_by_session
+@app.route('/delete_attendance_by_session', methods=['DELETE'])
+def delete_attendance_by_session():
+    data=request.get_json()
+    request_id=data['request_id'] #user id 
+    id=data['id'] #session id
+    if not request_id or not id :
+        return jsonify({'messege': 'request_id and id are required!'}),400
+    cur = None
+    try:
+        cur=mysql.connection.cursor()
+        # Check if the requesting user is an ADMIN or TEACHER
+        cur.execute("SELECT role FROM user WHERE id = %s", (request_id,))
+        user_role_result = cur.fetchone()
+        if not user_role_result or user_role_result[0] not in ('ADMIN', 'TEACHER'):
+            return jsonify({'message': 'User not authorized to delete attendance records.'}), 403
+        # check if the session is exist or not 
+        cur.execute("SELECT id FROM session WHERE id = %s", (id,))
+        session = cur.fetchone()
+        if not session:
+            return jsonify({'messege' : 'session not found'}), 404
+        # check attendance record 
+        cur.execute("SELECT id FROM attendance WHERE session_id = %s", (id,))
+        attendance = cur.fetchone()
+        if not attendance:
+            return jsonify({'message': 'No attendance records found for this session.'}), 404
+        # Delete attendance records for the session
+        cur.execute("DELETE FROM attendance WHERE session_id = %s", (id,))
+        mysql.connection.commit()
+        return jsonify({'message': 'Attendance records deleted successfully!'}), 200
+    except MySQLdb.Error as e:
+        app.logger.error(f"Database error in delete_attendance_by_session: {e}")
+        mysql.connection.rollback()
+        return jsonify({'message': 'Failed to delete attendance records due to a database error.'}), 500
+    finally:
+        if cur:
+            cur.close()
+
 # delete session
 @app.route('/delete_session', methods=['DELETE'])
 def delete_session():
