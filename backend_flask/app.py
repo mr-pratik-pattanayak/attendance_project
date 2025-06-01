@@ -597,7 +597,7 @@ def delete_attendance_by_session():
     request_id=data['request_id'] #user id 
     id=data['id'] #session id
     if not request_id or not id :
-        return jsonify({'messege': 'request_id and id are required!'}),400
+        return jsonify({'message': 'request_id and id are required!'}),400
     cur = None
     try:
         cur=mysql.connection.cursor()
@@ -610,7 +610,7 @@ def delete_attendance_by_session():
         cur.execute("SELECT id FROM session WHERE id = %s", (id,))
         session = cur.fetchone()
         if not session:
-            return jsonify({'messege' : 'session not found'}), 404
+            return jsonify({'message' : 'session not found'}), 404
         # check attendance record 
         cur.execute("SELECT id FROM attendance WHERE session_id = %s", (id,))
         attendance = cur.fetchone()
@@ -632,12 +632,34 @@ def delete_attendance_by_session():
 @app.route('/delete_session', methods=['DELETE'])
 def delete_session():
     data = request.get_json()
+    request_id=data['request_id']
     id = data['id']
-    cur = mysql.connection.cursor()
-    cur.execute("DELETE FROM session WHERE id=%s", (id,))
-    mysql.connection.commit()
-    cur.close()
-    return jsonify({'message': 'Session deleted successfully!'})
+    if not request_id or not id :
+        return jsonify({'message':'request_id and id are required'}), 400
+    cur = None
+    try:
+        cur = mysql.connection.cursor()
+        # check the requesting user is an ADMIN or a TEACHER
+        cur.execute("SELECT role FROM user WHERE id = %s ",(request_id,))
+        user_role_result=cur.fetchone()
+        if not user_role_result or user_role_result[0] not in ('ADMIN', 'TEACHER'):
+            return jsonify({'message': 'User not authorized to delete attendance records.'}), 403
+        # check if session is exist or not 
+        cur.execute("SELECT id FROM session WHERE id = %s",(id,))
+        session = cur.fetchone()
+        if not session:
+            return jsonify({'message' : 'session not found'}), 404
+        cur.execute("DELETE FROM session WHERE id = %s",(id,))
+        mysql.connection.commit()
+        return jsonify({'message': 'Session deleted successfully!'}), 200
+    except MySQLdb.Error as e:
+        app.logger.error(f"Database error in delete_session: {e}")
+        mysql.connection.rollback()
+        return jsonify({'message': 'Failed to delete session due to a database error.'}), 500
+    finally:
+        if cur:
+            cur.close()
+    
 
 # get all the sessions
 @app.route('/get_sessions', methods=['GET'])
