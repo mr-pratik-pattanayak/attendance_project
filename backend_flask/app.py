@@ -702,9 +702,7 @@ def get_sessions():
     finally:
         if cur:
             cur.close()
-
-
-
+            
 # get specific session's attendance
 @app.route('/get_session_attendance', methods=['GET'])
 def get_session_attendance():
