@@ -664,13 +664,45 @@ def delete_session():
 # get all the sessions
 @app.route('/get_sessions', methods=['GET'])
 def get_sessions():
-    cur = mysql.connection.cursor()
-    cur.execute("SELECT * FROM session")
-    sessions = cur.fetchall()
-    cur.close()
+    id = request.args.get('id')
+    cur = None
+    try:
+        cur = mysql.connection.cursor()
+        # check if the requesting user is an ADMIN or TEACHER
+        cur.execute("SELECT role FROM user WHERE id = %s", (id,))
+        user_role_result = cur.fetchone()
+        if not user_role_result or user_role_result[0] not in ('ADMIN', 'TEACHER'):
+            return jsonify({'message': 'User not authorized to view sessions.'}), 403
+        # Fetch all sessions
+        cur.execute("SELECT * FROM session")
+        sessions = cur.fetchall()
+        if not sessions:
+            return jsonify({'message': 'No sessions found.'}), 404
+        # Format the session data
+        result = []
+        for row in sessions:
+            # get creater name for more clarity
+            create=row[4]
+            cur.execute("SELECT name FROM user WHERE id = %s", (create,))
+            created_by = cur.fetchone()
+            creator_name = created_by[0] if created_by else "Unknown"
+            result.append({
+                'id': row[0],
+                'session_name': row[1],
+                'session_code': row[2],
+                'expiry_time': str(row[3]),
+                'created_by': row[4],
+                'created_by_name': creator_name,
+                'class': row[5],
+            })
+        return jsonify({'session_count': len(result), 'sessions': result}), 200
+    except MySQLdb.Error as e:
+        app.logger.error(f"Database error in get_sessions: {e}")
+        return jsonify({'message': 'Failed to retrieve sessions due to a database error.'}), 500
+    finally:
+        if cur:
+            cur.close()
 
-    result = [{'id': row[0], 'session_name': row[5], 'session_code': row[1], 'location_lat': row[2], 'location_long': row[3], 'expiry_time': str(row[4])} for row in sessions]
-    return jsonify(result)
 
 
 # get specific session's attendance
