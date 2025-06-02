@@ -768,32 +768,65 @@ def get_session_attendance():
 UPLOAD_FOLDER = 'uploads'
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+app.config['MAX_CONTENT_LENGTH'] = 16*1024*1024 #16mb
 allowed_extensions = {'xlsx', 'xls'}
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in allowed_extensions
 # import students from excel sheet
 @app.route('/import_students', methods=['POST'])
 def import_students():
-    if 'file' not in request.files:
-        return jsonify({'message': 'No file part'}), 400
-    file=request.files['file']
-    if file.filename == '':
-        return jsonify({'message': 'No selected file'}), 400
-    if file and allowed_file(file.filename):
-        filename = secure_filename(file.filename)
-        filepath=os.path.join(app.config['UPLOAD_FOLDER'], filename)
-        file.save(filepath)
-        df=pd.read_excel(filepath)
+    request_id = request.form.get('request_id')
+    if not request_id:
+        return jsonify({'message': 'request_id is required.'}), 400
+    try:
+        request_id = int(request_id)
+    except ValueError:
+        return jsonify({'message': 'request_id must be an integer.'}), 400
+    cur = None
+    try:
         cur = mysql.connection.cursor()
-        for index, row in df.iterrows():
-            id = row['id']
-            name = row['name']
-            email = row['email']
-            cur.execute("INSERT INTO student (id, name, email) VALUES (%s, %s, %s)", (id, name, email))
-        mysql.connection.commit()
-        cur.close()
-        return jsonify({'message': 'Students imported successfully!'}), 201
-    return jsonify({'message': 'Invalid file format'}), 400
+        # Check if the requesting user is an ADMIN or TEACHER
+        cur.execute("SELECT role FROM user WHERE id = %s", (request_id,))
+        user_role_result = cur.fetchone()
+        if not user_role_result or user_role_result[0] not in ('ADMIN', 'TEACHER'):
+            return jsonify({'message': 'User not authorized to import students.'}), 403
+        if 'file' not in request.files:
+            return jsonify({'message': 'No file part'}), 400
+        file=request.files['file']
+        if file.filename == '':
+            return jsonify({'message': 'No selected file'}), 400
+        if file and allowed_file(file.filename):
+            filename = secure_filename(file.filename)
+            filepath=os.path.join(app.config['UPLOAD_FOLDER'], filename)
+            file.save(filepath)
+            df=pd.read_excel(filepath)
+            student_count=0
+            for index, row in df.iterrows():
+                id = row['id']
+                name = row['name']
+                email = row['email']
+                # check student already in  database or not 
+                cur.execute("SELECT id FROM student WHERE id = %s", (id,))
+                student=cur.fetchone()
+                if student:
+                    continue #skip if student already exists
+                cur.execute("INSERT INTO student (id, name, email) VALUES (%s, %s, %s)", (id, name, email))
+                student_count += 1
+            mysql.connection.commit()
+            cur.close()
+            return jsonify({'message': 'Students imported successfully!', 'student_count': student_count}), 201
+    except MySQLdb.Error as e:
+        app.logger.error(f"Database error in import_students: {e}")
+        mysql.connection.rollback()
+        return jsonify({'message': 'Failed to import students due to a database error.'}), 500
+    except Exception as e:
+        app.logger.error(f"Unexpected error in import_students: {e}")
+        return jsonify({'message': 'An unexpected error occurred while importing students.'}), 500
+    finally:
+        if cur:
+            cur.close()
+        if filepath:
+            os.remove(filepath)  # Clean up the uploaded file after processing
 
 # register user
 @app.route('/register_user', methods=['POST'])
