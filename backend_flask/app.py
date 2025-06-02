@@ -756,6 +756,7 @@ def get_session_attendance():
         return jsonify({'message': 'session_id and request_id must be integers.'}), 400
     except MySQLdb.Error as e:
         app.logger.error(f"Database error in get_session_attendance: {e}")
+        mysql.connection.rollback()
         return jsonify({'message': 'Failed to retrieve session attendance due to a database error.'}), 500
     finally:
         if cur:
@@ -794,22 +795,39 @@ def import_students():
         return jsonify({'message': 'Students imported successfully!'}), 201
     return jsonify({'message': 'Invalid file format'}), 400
 
-# register admin
-@app.route('/register_admin', methods=['POST'])
-def register_admin():
+# register user
+@app.route('/register_user', methods=['POST'])
+def register_user():
     data = request.get_json()
-    name = data['name']
-    email = data['email']
-    phone = data['phone']
-    password = data['password']
-    role = data['role']
+    name = data.get('name')
+    email = data.get('email')
+    phone = data.get('phone')
+    password = data.get('password')
+    role = data.get('role')
+    if not name or not email or not phone or not password or not role:
+        return jsonify({'message': 'All fields are required!'}), 400
     if role not in ['ADMIN', 'TEACHER']:
         return jsonify({'message': 'Invalid role!'}), 400
-    cur = mysql.connection.cursor()
-    cur.execute("INSERT INTO user (name, email, phone, password, role) VALUES (%s, %s, %s, %s, %s)", (name, email, phone, password, role))
-    mysql.connection.commit()
-    cur.close()
-    return jsonify({'message': 'Admin registered successfully!'}), 201
+    cur=None
+    try:
+        cur=mysql.connection.cursor()
+        # check user is exit or not 
+        cur.execute("SELECT email FROM user WHERE email=%s", (email,))
+        existing_user=cur.fetchone()
+        if existing_user:
+            return jsonify({'message': 'User already exists with this email, Try another one or login!'}), 400
+        cur.execute("INSERT INTO user (name, email, phone, password, role) VALUES (%s, %s, %s, %s, %s)", (name, email, phone, password, role))
+        mysql.connection.commit()
+        new_user_id = cur.lastrowid
+        return jsonify({'message': 'User registered successfully!', 'user_id': new_user_id}), 201
+    except MySQLdb.Error as e:
+        app.logger.error(f"Database error in register_user: {e}")
+        mysql.connection.rollback()
+        return jsonify({'message': 'Failed to register user due to a database error.'}), 500
+    finally:
+        if cur:
+            cur.close()
+    
 
 # login admin
 @app.route('/login_admin', methods=['POST'])
