@@ -706,24 +706,60 @@ def get_sessions():
 # get specific session's attendance
 @app.route('/get_session_attendance', methods=['GET'])
 def get_session_attendance():
-    data = request.get_json()
-    session_id = data['session_id']
-    if not session_id:
-        return jsonify({'message': 'session_id is required'}), 400
-    cur = mysql.connection.cursor()
-    cur.execute("""
-        SELECT student_id, status, timestamp
-        FROM attendance
-        WHERE session_id = %s
-    """, (session_id,))
-    records = cur.fetchall()
-    cur.close()
-
-    if not records:
-        return jsonify({'message': 'No attendance records found for this session'}), 404
-
-    result = [{'student_id': row[1], 'status': row[3], 'timestamp': str(row[4])} for row in records]
-    return jsonify(result)
+    session_id = request.args.get('session_id')
+    request_id = request.args.get('request_id')
+    if not session_id or not request_id:
+        return jsonify({'message': 'session_id and request_id are required.'}), 400
+    cur = None
+    try:
+        session_id = int(session_id)
+        request_id = int(request_id)
+        cur = mysql.connection.cursor()
+        # Check if the requesting user is an ADMIN or TEACHER
+        cur.execute("SELECT role FROM user WHERE id = %s", (request_id,))
+        user_role_result = cur.fetchone()
+        if not user_role_result or user_role_result[0] not in ('ADMIN', 'TEACHER'):
+            return jsonify({'message': 'User not authorized to view attendance.'}), 403
+        # check if session exists
+        cur.execute("SELECT id FROM session WHERE id = %s", (session_id,))
+        session_result = cur.fetchone()
+        if not session_result:
+            return jsonify({'message': 'Session not found.'}), 404
+        # fetch the session name 
+        cur.execute("SELECT session_name FROM session WHERE id = %s", (session_id,))
+        session_name_result = cur.fetchone()
+        session_name = session_name_result[0] if session_name_result else "Unknown"
+        # check if attendance records exist for the session
+        cur.execute("SELECT id FROM attendance WHERE session_id = %s", (session_id,))
+        attendance_result = cur.fetchone()
+        if not attendance_result:
+            return jsonify({'message': 'No attendance records found for this session.'}), 404
+        # Fetch attendance records
+        cur.execute("SELECT * FROM attendance WHERE session_id = %s", (session_id,))
+        records = cur.fetchall()
+        if not records:
+            return jsonify({'message': 'No attendance records found for this session'}), 404
+        result = []
+        for row in records:
+            cur.execute("SELECT name FROM student WHERE id = %s", (row[1],))
+            student_name = cur.fetchone()
+            student_name = student_name[0] if student_name else "Unknown"
+            result.append({
+                'student_id': row[1],
+                'student_name': student_name,
+                'status': row[3],
+                'timestamp': str(row[4]) if row[4] else None
+            })
+        cur.close()
+        return jsonify({'session_name': session_name, 'attendance_records': result, 'record_count': len(result)}), 200
+    except ValueError:
+        return jsonify({'message': 'session_id and request_id must be integers.'}), 400
+    except MySQLdb.Error as e:
+        app.logger.error(f"Database error in get_session_attendance: {e}")
+        return jsonify({'message': 'Failed to retrieve session attendance due to a database error.'}), 500
+    finally:
+        if cur:
+            cur.close()
 
 # bulk student import from excel sheet 
 
