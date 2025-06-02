@@ -795,26 +795,33 @@ def import_students():
         file=request.files['file']
         if file.filename == '':
             return jsonify({'message': 'No selected file'}), 400
-        if file and allowed_file(file.filename):
-            filename = secure_filename(file.filename)
-            filepath=os.path.join(app.config['UPLOAD_FOLDER'], filename)
-            file.save(filepath)
-            df=pd.read_excel(filepath)
-            student_count=0
-            for index, row in df.iterrows():
-                id = row['id']
-                name = row['name']
-                email = row['email']
-                # check student already in  database or not 
-                cur.execute("SELECT id FROM student WHERE id = %s", (id,))
-                student=cur.fetchone()
-                if student:
-                    continue #skip if student already exists
-                cur.execute("INSERT INTO student (id, name, email) VALUES (%s, %s, %s)", (id, name, email))
-                student_count += 1
-            mysql.connection.commit()
-            cur.close()
-            return jsonify({'message': 'Students imported successfully!', 'student_count': student_count}), 201
+        if not allowed_file(file.filename):
+            return jsonify({'message': 'Invalid file type. Only .xlsx and .xls files are allowed.'}), 400
+        filename = secure_filename(file.filename)
+        filepath=os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        file.save(filepath)
+        df=pd.read_excel(filepath)
+        expected_columns = {'id', 'name', 'class', 'email', 'phone'}
+        if not expected_columns.issubset(df.columns):
+            os.remove(filepath)
+            return jsonify({'message': f'Excel file must contain the following columns: {", ".join(expected_columns)}'}), 400
+        student_count=0
+        for index, row in df.iterrows():
+            id = row['id']
+            name = row['name']
+            class_name=row['class']
+            email = row['email']
+            phone = row['phone']
+            # check student already in  database or not 
+            cur.execute("SELECT id FROM student WHERE id = %s", (id,))
+            student=cur.fetchone()
+            if student:
+                continue #skip if student already exists
+            cur.execute("INSERT INTO student (id, name, class, email, phone) VALUES (%s, %s, %s, %s, %s)", (id, name, class_name, email,phone))
+            student_count += 1
+        mysql.connection.commit()
+        os.remove(filepath)
+        return jsonify({'message': 'Students imported successfully!', 'student_count': student_count}), 201
     except MySQLdb.Error as e:
         app.logger.error(f"Database error in import_students: {e}")
         mysql.connection.rollback()
@@ -825,9 +832,7 @@ def import_students():
     finally:
         if cur:
             cur.close()
-        if filepath:
-            os.remove(filepath)  # Clean up the uploaded file after processing
-
+    
 # register user
 @app.route('/register_user', methods=['POST'])
 def register_user():
