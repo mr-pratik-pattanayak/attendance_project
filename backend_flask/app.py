@@ -947,16 +947,37 @@ def delete_teacher():
 @app.route('/get_teachers', methods=['GET'])
 def get_teachers():
     request_id = request.args.get('request_id')
-    cur = mysql.connection.cursor()
-    cur.execute("select role from user where id=%s", (request_id,))
-    result = cur.fetchone()
-    if not result or result[0] != 'ADMIN':
-        return jsonify({'message': 'only admin can view teachers!'}), 403
-    cur.execute("SELECT * FROM user WHERE role='TEACHER'")
-    teachers = cur.fetchall()
-    cur.close()
-    result = [{'id': row[0], 'name': row[1], 'email': row[2], 'phone' : row[3], 'role': row[5]} for row in teachers]
-    return jsonify(result)
+    if not request_id :
+        return jsonify({'message': 'request_id is required!'}), 400
+    try:
+        request_id = int(request_id)
+    except ValueError:
+        return jsonify({'message': 'request_id must be an integer!'}), 400
+    cur = None
+    try:
+        cur=mysql.connection.cursor()
+        # Check if the requesting user is an ADMIN
+        cur.execute("SELECT role FROM user WHERE id = %s", (request_id,))
+        user_role_result = cur.fetchone()
+        if not user_role_result or user_role_result[0] != 'ADMIN':
+            return jsonify({'message': 'Only admin can view teachers!'}), 403
+        # Fetch all teachers
+        cur.execute("SELECT * FROM user WHERE role='TEACHER'")
+        teachers=cur.fetchall()
+        if not teachers:
+            return jsonify({'message': 'No teachers found.'}), 404
+        result = [{'id': row[0], 'name': row[1], 'email': row[2], 'phone' : row[3], 'role': row[5]} for row in teachers]
+        return jsonify({'teacher_count': len(result), 'teachers': result}), 200
+    except MySQLdb.Error as e:
+        app.logger.error(f"Database error in get_teachers: {e}")
+        return jsonify({'message': 'Failed to retrieve teachers due to a database error.'}), 500
+    except Exception as e:
+        app.logger.error(f"Unexpected error in get_teachers: {e}")
+        return jsonify({'message': 'An unexpected error occurred while retrieving teachers.'}), 500
+    finally:
+        if cur:
+            cur.close()
+
 
 # add teacher
 @app.route('/add_teacher', methods=['POST'])
