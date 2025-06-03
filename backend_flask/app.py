@@ -867,20 +867,37 @@ def register_user():
             cur.close()
     
 
-# login admin
-@app.route('/login_admin', methods=['POST'])
-def login_admin():
+# login user
+@app.route('/login_user', methods=['POST'])
+def login_user():
     data = request.get_json()
-    email = data['email']
-    password = data['password']
-    cur = mysql.connection.cursor()
-    cur.execute("SELECT * FROM user WHERE email=%s AND password=%s", (email, password))
-    admin = cur.fetchone()
-    cur.close()
-    if admin:
-        return jsonify({'message': 'Login successful!'}), 200
-    else:
-        return jsonify({'message': 'Invalid credentials!'}), 401
+    email = data.get('email')
+    password = data.get('password')
+    cur = None
+    try: 
+        cur = mysql.connection.cursor()
+        if not email or not password:
+            return jsonify({'message': 'Email and password are required!'}), 400
+        # check if user is exist or not
+        cur.execute("SELECT id,role FROM user WHERE email=%s AND password=%s", (email,password))
+        user = cur.fetchone()
+        if not user:
+            return jsonify({'message': 'Invalid credentials! Please use valid information or signup'}), 401
+        # If user exists, check role
+        user_id,role=user
+        if role not in ('ADMIN', 'TEACHER'):
+            return jsonify({'message': 'Only admin or teacher can login!'}), 403
+        return jsonify({'message': 'Login successful!','user_id': user_id, 'role': role}), 200
+    except MySQLdb.Error as e:
+        app.logger.error(f"Database error in login_user: {e}")
+        mysql.connection.rollback()
+        return jsonify({'message': 'Failed to login due to a database error.'}), 500
+    except Exception as e:
+        app.logger.error(f"Unexpected error in login_user: {e}")
+        return jsonify({'message': 'An unexpected error occurred while logging in.'}), 500
+    finally:
+        if cur:
+            cur.close()
 
 # delete teacher
 @app.route('/delete_teacher', methods=['DELETE'])
