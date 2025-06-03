@@ -903,24 +903,46 @@ def login_user():
 @app.route('/delete_teacher', methods=['DELETE'])
 def delete_teacher():
     data = request.get_json()
-    id = data['id']
-    request_id = data['request_id']
-
-    cur = mysql.connection.cursor()
-    cur.execute("SELECT role FROM user WHERE id=%s ", (request_id,))
-    result = cur.fetchone()
-    if not result or result[0] != 'ADMIN':
-        return jsonify({'message': 'only admin can delete teacher!'}), 404
-
-    cur.execute("SELECT role FROM user WHERE id=%s ", (id,))
-    result = cur.fetchone()
-    if not result or result[0] != 'TEACHER':
-        return jsonify({'message': 'Teacher not found!'}), 404
-    cur.execute("DELETE FROM user WHERE id=%s", (id,))
-    mysql.connection.commit()
-    cur.close()
-    return jsonify({'message': 'Teacher deleted successfully!'}), 200
-
+    id = data.get('id')
+    request_id = data.get('request_id')
+    if not id or not request_id:
+        return jsonify({'message': 'id and request_id are required!'}), 400
+    try:
+        id = int(id)
+        request_id = int(request_id)
+    except ValueError:
+        return jsonify({'message': 'id and request_id must be integers!'}), 400
+    cur = None
+    try:
+        cur = mysql.connection.cursor()
+        # Check if the requesting user is an ADMIN or not 
+        cur.execute("SELECT role FROM user WHERE id = %s", (request_id,))
+        user_role_result = cur.fetchone()
+        if not user_role_result or user_role_result[0] != 'ADMIN':
+            return jsonify({'message': 'Only admin can delete teacher!'}), 403
+        cur.execute("SELECT role FROM user WHERE id = %s", (id,))
+        role = cur.fetchone()
+        if not role or role[0] != 'TEACHER':
+            return jsonify({'message': 'Teacher not found!'}), 404
+        # delete teacher info 
+        cur.execute("SELECT name,email,phone FROM user WHERE id = %s", (id,))
+        result = cur.fetchone()
+        teacher={"name": result[0], "email": result[1], "phone": result[2]}
+        # delete teacher
+        cur.execute("DELETE FROM user WHERE id = %s", (id,))
+        mysql.connection.commit()
+        return jsonify({'message': 'Teacher deleted successfully!', 'teacher': teacher}), 200
+    except MySQLdb.Error as e:
+        app.logger.error(f"Database error in delete_teacher: {e}")
+        mysql.connection.rollback()
+        return jsonify({'message': 'Failed to delete teacher due to a database error.'}), 500
+    except Exception as e:
+        app.logger.error(f"Unexpected error in delete_teacher: {e}")
+        return jsonify({'message': 'An unexpected error occurred while deleting teacher.'}), 500
+    finally:
+        if cur:
+            cur.close()
+    
 # get all the teachers
 @app.route('/get_teachers', methods=['GET'])
 def get_teachers():
