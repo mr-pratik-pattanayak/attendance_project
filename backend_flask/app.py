@@ -1028,15 +1028,55 @@ def add_teacher():
 @app.route('/update_teacher', methods=['PUT'])
 def update_teacher():
     data = request.get_json()
+    request_id = data['request_id']
     id = data['id']
-    name = data['name']
-    email = data['email']
-    phone = data['phone']
-    cur = mysql.connection.cursor()
-    cur.execute("UPDATE user SET name=%s, email=%s, phone=%s WHERE id=%s", (name, email, phone, id))
-    mysql.connection.commit()
-    cur.close()
-    return jsonify({'message': 'Teacher updated successfully!'}), 200
+    try:
+        request_id=int(request_id)
+        id=int(id)
+    except ValueError as e:
+        return jsonify({'message': 'ids must be integers'})
+    cur = None
+    try:
+        cur = mysql.connection.cursor()
+        # check the request id is admin or teacher
+        cur.execute("SELECT role FROM user WHERE id = %s", (request_id,))
+        user_role = cur.fetchone()
+        if not user_role or user_role[0] not in ('ADMIN', 'TEACHER'):
+            return jsonify({'message': 'User not authorized to update teacher.'}), 403
+        # CHECK teacher is exit or not 
+        cur.execute("SELECT role FROM user WHERE id = %s", (id,))
+        teacher = cur.fetchone()
+        if not teacher:
+            return jsonify({'message': 'Teacher not found.'}), 404
+        if teacher[0] != 'TEACHER':
+            return jsonify({'message': 'User is not a teacher.'}), 400
+        # extract the old data
+        cur.execute("SELECT * FROM user where id = %s",(id,))
+        old_data = cur.fetchall()
+        # update teacher info
+        name = data.get('name')
+        email = data.get('email')
+        phone = data.get('phone')
+        # if new data is not provide then use the previous data 
+        if not name:
+            name = old_data[0][1]
+        if not email:
+            email = old_data[0][2]
+        if not phone:
+            phone = old_data[0][3]
+        cur.execute("UPDATE user SET name=%s, email=%s, phone=%s WHERE id=%s ",(name,email,phone,id))
+        mysql.connection.commit()
+        return jsonify({'message': 'teacher details update sucessfully'}),200
+    except MySQLdb.Error as e:
+        app.logger.error(f"Database error in update_teacher: {e}")
+        mysql.connection.rollback()
+        return jsonify({'message': 'Failed to update teacher due to a database error.'}), 500
+    except Exception as e:
+        app.logger.error(f"Unexpected error in update_teacher: {e}")
+        return jsonify({'message': 'An unexpected error occurred while updating teacher.'}), 500
+    finally:
+        if cur:
+            cur.close()
 
 # student login
 @app.route('/student_login', methods=['POST'])
