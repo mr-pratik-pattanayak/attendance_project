@@ -1103,7 +1103,7 @@ def student_login():
         if not student:
             return jsonify({'message': 'Student not found!'}), 404
         # Check if the email matches
-        if student[1] != email:
+        if student[3] != email:
             return jsonify({'message': 'Invalid email address!'}), 401
         result = {
             'id': student[0],
