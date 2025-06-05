@@ -1084,14 +1084,44 @@ def student_login():
     data = request.get_json()
     id = data['id']
     email = data['email'] # email is used for password
-    cur = mysql.connection.cursor()
-    cur.execute("SELECT * FROM student WHERE id=%s AND email=%s", (id, email))
-    student = cur.fetchone()
-    cur.close()
-    if student:
-        return jsonify({'message': 'Login successful!'}), 200
-    else:
-        return jsonify({'message': 'Invalid credentials!'}), 401
+    if not id or not email:
+        return jsonify({'message': 'id and email are required!'}), 400
+    try:
+        id = int(id)
+    except ValueError:
+        return jsonify({'message': 'id must be an integer!'}), 400
+    if not isinstance(email, str):
+        return jsonify({'message': 'email must be a string!'}), 400
+    if '@' not in email or '.' not in email:
+        return jsonify({'message': 'email must be a valid email address!'}), 400
+    cur = None
+    try:
+        cur = mysql.connection.cursor()
+        # Check if the student exists
+        cur.execute("SELECT * FROM student WHERE id = %s", (id,))
+        student = cur.fetchone()
+        if not student:
+            return jsonify({'message': 'Student not found!'}), 404
+        # Check if the email matches
+        if student[1] != email:
+            return jsonify({'message': 'Invalid email address!'}), 401
+        result = {
+            'id': student[0],
+            'name': student[1],
+            'class': student[2],
+            'email': student[3],
+            'phone': student[4]
+        }
+        return jsonify({'message': 'Login successful!', 'student': result}), 200
+    except MySQLdb.Error as e:
+        app.logger.error(f"Database error in student_login: {e}")
+        return jsonify({'message': 'Failed to login due to a database error.'}), 500
+    except Exception as e:
+        app.logger.error(f"Unexpected error in student_login: {e}")
+        return jsonify({'message': 'An unexpected error occurred while logging in.'}), 500
+    finally:
+        if cur:
+            cur.close()
     
 
 
